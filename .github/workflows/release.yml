@@ -39,47 +39,36 @@ jobs:
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
         run: |
-          # Create variables
           CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
           PROFILE_PATH=$RUNNER_TEMP/build_pp.mobileprovision
           KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
           
-          # Decode the certificate and provisioning profile from base64
           echo -n "$CERTIFICATE_BASE64" | base64 --decode --output $CERTIFICATE_PATH
           echo -n "$MOBILEPROVISION_FILE_B64" | base64 --decode --output $PROFILE_PATH
           
-          # Create temporary keychain
           security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
           security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           
-          # Import certificate to keychain
           security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
           security list-keychain -d user -s $KEYCHAIN_PATH
           
-          # Apply partition list (required for signing)
           security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
           
-          # Get certificate ID for signing
           CERTIFICATE_ID=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | grep -o '"[^"]*"' | head -1 | tr -d '"')
           echo "CERTIFICATE_ID=$CERTIFICATE_ID" >> $GITHUB_ENV
           
-          # Set up provisioning profile
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
           cp $PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
 
       - name: build and sign iOS app
         run: |
-          # Build Flutter ipa without codesigning
           flutter build ios --release --no-codesign
           
-          # Sign the app
           security unlock-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" $RUNNER_TEMP/app-signing.keychain-db
           
-          # Sign the app bundle
           codesign --deep --force --options runtime -vvv --sign "$CERTIFICATE_ID" ./build/ios/iphoneos/Runner.app
           
-          # Create IPA manually (similar to your original workflow)
           cd build/ios/iphoneos
           mkdir -p Payload
           cp -r Runner.app Payload/
