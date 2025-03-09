@@ -34,7 +34,7 @@ jobs:
         
       - name: setup code signing
         env:
-          CERTIFICATE_BASE64: ${{ secrets.CERTIFICATE_BASE64 }}
+          CERTIFICATE_BASE64: ${{ secrets.CERTIFICATE_B64 }}
           MOBILEPROVISION_FILE_B64: ${{ secrets.MOBILEPROVISION_FILE_B64 }}
           KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
           P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
