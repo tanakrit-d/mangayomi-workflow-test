@@ -15,78 +15,87 @@ jobs:
       contents: write
     runs-on: macos-latest
     steps:
-      - name: Checkout branch
+      - name: checkout branch
         uses: actions/checkout@v4
 
-      - name: Setup Flutter
+      - name: setup flutter
         uses: subosito/flutter-action@v2
         with:
           channel: "stable"
 
-      - name: Setup Rust toolchain
+      - name: setup rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install the CLI tool
+      - name: install the CLI tool
         run: cargo install 'flutter_rust_bridge_codegen'
 
-      - name: Flutter pub get
+      - name: flutter pub get
         run: flutter pub get
-
-      - name: Setup keychain and import certificate
+        
+      - name: setup code signing
         env:
-          CODESIGN_PASSWORD: ${{ secrets.CODESIGN_PASSWORD }}
-          KEYCHAIN_PATH: build.keychain
-          CERTIFICATE_ID: ${{ secrets.CERTIFICATE_ID }}
-          PROFILE_ID: ${{ secrets.PROFILE_ID }}
-          CERTIFICATE_FILE_B64: ${{ secrets.CERTIFICATE_FILE_B64 }}
+          CERTIFICATE_BASE64: ${{ secrets.IOS_CERTIFICATE_BASE64 }}
+          MOBILEPROVISION_FILE_B64: ${{ secrets.IOS_MOBILEPROVISION_FILE_B64 }}
+          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
+          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
         run: |
-          echo "$CERTIFICATE_FILE_B64" | base64 --decode > certificate.p12
-          echo "$MOBILEPROVISION_FILE_B64" | base64 --decode > profile.mobileprovision
-
-          security create-keychain -p "$CODESIGN_PASSWORD" "$KEYCHAIN_PATH"
-          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
-          security default-keychain -s "$KEYCHAIN_PATH"
-          security unlock-keychain -p "$CODESIGN_PASSWORD"
-          security import certificate.p12 -t agg -k "$KEYCHAIN_PATH" -P "$CODESIGN_PASSWORD" -A
-          security set-key-partition-list -S "apple-tool:,apple:,codesign" -s -k "$CODESIGN_PASSWORD" "$KEYCHAIN_PATH"
-
+          # Create variables
+          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
+          PROFILE_PATH=$RUNNER_TEMP/build_pp.mobileprovision
+          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
+          
+          # Decode the certificate and provisioning profile from base64
+          echo -n "$CERTIFICATE_BASE64" | base64 --decode --output $CERTIFICATE_PATH
+          echo -n "$MOBILEPROVISION_FILE_B64" | base64 --decode --output $PROFILE_PATH
+          
+          # Create temporary keychain
+          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # Import certificate to keychain
+          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
+          security list-keychain -d user -s $KEYCHAIN_PATH
+          
+          # Apply partition list (required for signing)
+          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
+          
+          # Get certificate ID for signing
+          CERTIFICATE_ID=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | grep -o '"[^"]*"' | head -1 | tr -d '"')
+          echo "CERTIFICATE_ID=$CERTIFICATE_ID" >> $GITHUB_ENV
+          
+          # Set up provisioning profile
           mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          mv profile.mobileprovision ~/Library/MobileDevice/Provisioning\ Profiles/
+          cp $PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
 
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          echo "${PROFILE_ID}" | base64 --decode > ~/Library/MobileDevice/Provisioning\ Profiles/profile.mobileprovision
-
-      - name: Build iOS IPA
+      - name: build and sign iOS app
         run: |
-          flutter build ipa --release --no-codesign
-
-
-          security unlock-keychain -p "$CODESIGN_PASSWORD" "$KEYCHAIN_PATH"
-
-          CERTIFICATE_ID=$(security find-identity -p codesigning -v | grep 'Apple' | awk '{print $2}' | head -n 1)
-          echo "Using CERTIFICATE_ID: $CERTIFICATE_ID"
-
-          codesign --deep --force --options runtime -vvv --sign "$CERTIFICATE_ID" build/ios/archive/Runner.xcarchive/Products/Applications/Runner.app
-
+          # Build Flutter ipa without codesigning
+          flutter build ios --release --no-codesign
+          
+          # Sign the app
+          security unlock-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" $RUNNER_TEMP/app-signing.keychain-db
+          
+          # Sign the app bundle
+          codesign --deep --force --options runtime -vvv --sign "$CERTIFICATE_ID" ./build/ios/iphoneos/Runner.app
+          
+          # Create IPA manually (similar to your original workflow)
           cd build/ios/iphoneos
-          mkdir Payload
-          mv Runner.app Payload/
-          zip -r app-release.ipa Payload
-          mv app-release.ipa Mangayomi-${{ github.ref_name }}-ios.ipa
-  
+          mkdir -p Payload
+          cp -r Runner.app Payload/
+          zip -r Mangayomi-${{ github.ref_name }}-ios.ipa Payload
 
-      - name: Upload Artifact iOS IPA
+      - name: upload artifact ios ipa
         uses: actions/upload-artifact@v4
         with:
           name: Mangayomi-${{ github.ref_name }}-ios
           path: "build/ios/iphoneos/Mangayomi-*.ipa"
 
-      - name: Release Package iOS IPA
+      - name: release package ios ipa
         uses: ncipollo/release-action@v1
         with:
           artifacts: "build/ios/iphoneos/Mangayomi-*.ipa"
           allowUpdates: true
-
 
   call-workflow-sideloading:
     needs: build-and-release-ios-ipa
