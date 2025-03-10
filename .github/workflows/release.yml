@@ -5,6 +5,10 @@ on:
     tags:
       - v*
 
+env:
+  PYTHON_VERSION: '3.12'
+  PYZULE-RW: 'https://github.com/asdfzxcvbn/pyzule-rw/archive/main.zip'
+
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref_name }}
   cancel-in-progress: true
@@ -17,6 +21,11 @@ jobs:
     steps:
       - name: checkout branch
         uses: actions/checkout@v4
+
+      - name: setup python
+        uses: actions/setup-python@v4
+        with:
+          python-version: ${{ env.PYTHON_VERSION }}
 
       - name: setup flutter
         uses: subosito/flutter-action@v2
@@ -31,48 +40,23 @@ jobs:
 
       - name: flutter pub get
         run: flutter pub get
-        
-      - name: setup code signing
-        env:
-          CERTIFICATE_FILE_B64: ${{ secrets.CERTIFICATE_FILE_B64 }}
-          MOBILEPROVISION_FILE_B64: ${{ secrets.MOBILEPROVISION_FILE_B64 }}
-          KEYCHAIN_PASSWORD: ${{ secrets.KEYCHAIN_PASSWORD }}
-          P12_PASSWORD: ${{ secrets.P12_PASSWORD }}
-        run: |
-          CERTIFICATE_PATH=$RUNNER_TEMP/build_certificate.p12
-          PROFILE_PATH=$RUNNER_TEMP/build_pp.mobileprovision
-          KEYCHAIN_PATH=$RUNNER_TEMP/app-signing.keychain-db
-          
-          echo -n "$CERTIFICATE_FILE_B64" | base64 --decode --output $CERTIFICATE_PATH
-          echo -n "$MOBILEPROVISION_FILE_B64" | base64 --decode --output $PROFILE_PATH
-          
-          security create-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          security set-keychain-settings -lut 21600 $KEYCHAIN_PATH
-          security unlock-keychain -p "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          
-          security import $CERTIFICATE_PATH -P "$P12_PASSWORD" -A -t cert -f pkcs12 -k $KEYCHAIN_PATH
-          security list-keychain -d user -s $KEYCHAIN_PATH
-          
-          security set-key-partition-list -S apple-tool:,apple:,codesign: -s -k "$KEYCHAIN_PASSWORD" $KEYCHAIN_PATH
-          
-          CERTIFICATE_ID=$(security find-identity -v -p codesigning $KEYCHAIN_PATH | grep -o '"[^"]*"' | head -1 | tr -d '"')
-          echo "CERTIFICATE_ID=$CERTIFICATE_ID" >> $GITHUB_ENV
-          
-          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
-          cp $PROFILE_PATH ~/Library/MobileDevice/Provisioning\ Profiles/
 
-      - name: build and sign iOS app
+      - name: setup pyzule-rw
+        run: |
+          python -m pip install --upgrade pip
+          pip install --force-reinstall ${{ env.PYZULE-RW }}
+
+      - name: build ios
         run: |
           flutter build ios --release --no-codesign
-          
-          security unlock-keychain -p "${{ secrets.KEYCHAIN_PASSWORD }}" $RUNNER_TEMP/app-signing.keychain-db
-          
-          codesign --deep --force --options runtime -vvv --sign "$CERTIFICATE_ID" ./build/ios/iphoneos/Runner.app
-          
           cd build/ios/iphoneos
-          mkdir -p Payload
-          cp -r Runner.app Payload/
-          zip -r Mangayomi-${{ github.ref_name }}-ios.ipa Payload
+          mkdir Payload
+          cd Payload
+          ln -s ../Runner.app
+          cd ..
+          zip -r app-release.ipa Payload
+          cyan -i app-release.ipa -o app-release-fakesign.ipa -uwsgq
+          mv app-release-fakesign.ipa Mangayomi-${{ github.ref_name }}-ios.ipa
 
       - name: upload artifact ios ipa
         uses: actions/upload-artifact@v4
