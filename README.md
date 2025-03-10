@@ -32,6 +32,23 @@ Features include:
 ## Download
 Get the app from our [releases page](https://github.com/kodjodevf/mangayomi/releases).
 
+## iOS Sideloading Sources
+<a href="https://intradeus.github.io/http-protocol-redirector?r=altstore://source?url=https://raw.githubusercontent.com/tanakrit-d/mangayomi-workflow-test/refs/heads/main/repo/source.json">
+<img alt="AltStore Source" src="repo/images/buttons/altstore_button_resized.png" width="135">
+</a>
+&nbsp;
+<a href="https://intradeus.github.io/http-protocol-redirector?r=feather://source/https://raw.githubusercontent.com/tanakrit-d/mangayomi-workflow-test/refs/heads/main/repo/source.json">
+<img alt="Feather Source" src="repo/images/buttons/feather_button_resized.png" width="135">
+</a>
+&nbsp;
+<a href="https://intradeus.github.io/http-protocol-redirector?r=sidestore://source?url=https://raw.githubusercontent.com/tanakrit-d/mangayomi-workflow-test/refs/heads/main/repo/source.json">
+<img alt="Sidestore Source" src="repo/images/buttons/sidestore_button_resized.png" width="135">
+</a>
+&nbsp;
+<a href="https://intradeus.github.io/http-protocol-redirector?r=https://raw.githubusercontent.com/tanakrit-d/mangayomi-workflow-test/refs/heads/main/repo/source.json">
+<img alt="Direct URL Source" src="repo/images/buttons/url_button_resized.png" width="135">
+</a>
+
 # Contributing
 
 Contributions are welcome!
